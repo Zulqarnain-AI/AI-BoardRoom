@@ -782,14 +782,26 @@ def render_pitch_section(pitch: dict):
         return
 
     company = pitch.get("startup_name", "Your Startup")
-    tagline = pitch.get("startup_tagline", "")
+    tagline = pitch.get("tagline") or pitch.get("startup_tagline", "")
     problem = pitch.get("problem", "")
     solution = pitch.get("solution", "")
     target = pitch.get("target_market", "")
     model = pitch.get("business_model", "")
     score = pitch.get("investor_score", "?/10")
-    vision = pitch.get("vision", "")
-    risks = pitch.get("key_risks", "")
+    vision = pitch.get("vision") or pitch.get("competitive_advantage", "")
+    risks = pitch.get("key_risks") or pitch.get("critical_risk", "")
+    elevator_pitch = pitch.get("elevator_pitch", "")
+
+    key_features = pitch.get("key_features", [])
+    if isinstance(key_features, list):
+        key_features_text = "\n".join([f"- {f}" for f in key_features if f])
+    else:
+        key_features_text = str(key_features or "")
+
+    if isinstance(risks, list):
+        risks_text = "; ".join([str(r) for r in risks if r])
+    else:
+        risks_text = str(risks or "")
 
     st.markdown(f"""
     <div class="pitch-hero">
@@ -845,9 +857,23 @@ def render_pitch_section(pitch: dict):
         st.markdown(f"""
         <div class="pitch-card">
             <span class="pitch-card-label">⚠️ Key Risks</span>
-            <div class="pitch-card-content">{risks}</div>
+            <div class="pitch-card-content">{risks_text}</div>
         </div>
         """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### Product Highlights")
+    if key_features_text:
+        st.markdown(key_features_text)
+    else:
+        st.info("Key features were not provided in the pitch output.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### Executive Narrative")
+    if elevator_pitch:
+        st.markdown(f"> {elevator_pitch}")
+    else:
+        st.info("Elevator narrative is missing in the generated pitch.")
 
     # Investor score at the bottom
     st.markdown(f"""

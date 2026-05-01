@@ -19,7 +19,7 @@ import streamlit as st  # type: ignore
 import re
 from agent_definitions import AGENTS
 from agent_runner import call_agent
-from pitch_generator import generate_pitch
+from pitch_generator import generate_pitch, generate_business_plan
 from ui_helpers import (
     inject_custom_css,
     render_chat_bubble,
@@ -55,6 +55,8 @@ if "session_round" not in st.session_state:
     st.session_state.session_round = 0
 if "show_history" not in st.session_state:
     st.session_state.show_history = False
+if "business_plan" not in st.session_state:
+    st.session_state.business_plan = ""
 
 
 def _next_turn() -> int:
@@ -269,6 +271,7 @@ if st.session_state.current_idea:
             if st.button("🔄 Reset", use_container_width=True, key="reset_btn"):
                 st.session_state.conversation_history = []
                 st.session_state.pitch = None
+                st.session_state.business_plan = ""
                 st.session_state.debate_finished = False
                 st.session_state.session_started = False
                 st.toast("🔄 Debate reset", icon="🔄")
@@ -382,6 +385,7 @@ if st.session_state.current_idea:
                         conversation=st.session_state.conversation_history,
                     )
                 st.session_state.pitch = pitch_data
+                st.session_state.business_plan = ""
                 st.toast("🎯 Pitch generated!", icon="✨")
                 st.rerun()
 
@@ -443,6 +447,10 @@ else:
 
     if start_btn:
         if idea_input.strip():
+            st.session_state.conversation_history = []
+            st.session_state.pitch = None
+            st.session_state.business_plan = ""
+            st.session_state.debate_finished = False
             st.session_state.current_idea = idea_input.strip()
             st.session_state.session_started = True
             st.session_state.session_round = 1
@@ -463,6 +471,46 @@ if st.session_state.current_idea and st.session_state.conversation_history:
     with tab_pitch:
         if st.session_state.pitch:
             render_pitch_section(st.session_state.pitch)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("### Business Plan")
+            st.caption("Generate a board-ready business plan and download it as a Markdown document.")
+
+            col_plan_generate, col_plan_download = st.columns([1, 1], gap="small")
+
+            with col_plan_generate:
+                if st.button("🧾 Generate Business Plan", use_container_width=True, key="generate_plan_btn"):
+                    with st.spinner("Building a professional business plan…"):
+                        plan_md = generate_business_plan(
+                            idea=st.session_state.current_idea,
+                            pitch=st.session_state.pitch,
+                            conversation=st.session_state.conversation_history,
+                        )
+                    st.session_state.business_plan = plan_md
+                    st.toast("🧾 Business plan generated", icon="✅")
+                    st.rerun()
+
+            with col_plan_download:
+                if st.session_state.business_plan:
+                    st.download_button(
+                        label="⬇️ Download Business Plan",
+                        data=st.session_state.business_plan,
+                        file_name="business_plan.md",
+                        mime="text/markdown",
+                        use_container_width=True,
+                        key="download_plan_btn",
+                    )
+                else:
+                    st.button(
+                        "⬇️ Download Business Plan",
+                        use_container_width=True,
+                        disabled=True,
+                        key="download_plan_btn_disabled",
+                    )
+
+            if st.session_state.business_plan:
+                with st.expander("Preview Business Plan", expanded=False):
+                    st.markdown(st.session_state.business_plan)
         else:
             st.info(
                 "💡 Finish the debate and click 'GENERATE PITCH' in the controls panel to create your pitch deck."
@@ -510,11 +558,13 @@ Built with Streamlit + Groq API.
     if st.session_state.current_idea:
         st.markdown("---")
         if st.button("🔄 Start Over", use_container_width=True):
-            for key in ["conversation_history", "pitch", "debate_finished", "current_idea"]:
+            for key in ["conversation_history", "pitch", "business_plan", "debate_finished", "current_idea"]:
                 if key == "conversation_history":
                     st.session_state[key] = []
-                elif key == "pitch":
+                elif key in ("pitch",):
                     st.session_state[key] = None
+                elif key == "business_plan":
+                    st.session_state[key] = ""
                 elif key == "debate_finished":
                     st.session_state[key] = False
                 else:
