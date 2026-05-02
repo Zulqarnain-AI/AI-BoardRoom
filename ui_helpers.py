@@ -11,6 +11,65 @@ Premium Boardroom UI Components & Styling
 
 import streamlit as st
 from agent_definitions import AGENTS
+import time
+import os
+import re
+import edge_tts
+import tempfile
+import threading
+
+class VoiceManager:
+    """Manages Microsoft Edge Neural Voices for each agent role."""
+    # Format: (Voice_ID, Rate)
+    VOICE_MAP = {
+        "CEO": ("en-US-AvaMultilingualNeural", "+15%"),         # Sarah Chen (Female)
+        "CTO": ("en-US-AndrewMultilingualNeural", "+15%"),  # Marcus Webb (Male)
+        "CFO": ("en-US-AvaNeural", "+10%"),        # Diana Okafor (Female)
+        "CMO": ("en-US-AndrewNeural", "+20%"),          # Jake Rivera (Male)
+        "Investor": ("en-NZ-MollyNeural", "+10%"),# Victoria Stone (Female)
+    }
+     
+    @classmethod
+    def get_voice_config(cls, role: str) -> tuple:
+        return cls.VOICE_MAP.get(role, ("en-US-AriaNeural", "+15%"))
+
+
+def generate_speech(agent_role: str, text: str) -> str:
+    """Generate TTS audio from text using role-specific voice and return temp file path."""
+    voice, rate = VoiceManager.get_voice_config(agent_role)
+    try:
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
+        fp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+        fp.close()
+        # Run async operation synchronously
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(communicate.save(fp.name))
+        return fp.name
+    except Exception as e:
+        print(f"Speech generation error: {e}")
+        return ""
+
+def play_agent_audio(text: str, role: str):
+    """Play agent audio as a single continuous stream without artificial pauses."""
+    audio_file = generate_speech(role, text.strip())
+    
+    if audio_file:
+        try:
+            with open(audio_file, "rb") as f:
+                audio_bytes = f.read()
+            # Play the entire response at once natively
+            st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+        except Exception as e:
+            print(f"Audio playback error: {e}")
+        finally:
+            if os.path.exists(audio_file):
+                try:
+                    os.remove(audio_file)
+                except:
+                    pass
+
 
 
 def inject_custom_css():
@@ -678,6 +737,174 @@ def render_chat_bubble(speaker: str, role: str, content: str, is_user: bool = Fa
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+
+def stream_chat_bubble_with_audio(speaker: str, role: str, content: str, agent_color: str = "#6366f1", emoji: str = "🤖"):
+    """Generates audio first, then plays voice and streams text simultaneously with proper sync."""
+    placeholder = st.empty()
+    audio_container = st.container()
+    
+    # Show loading animation while audio generates
+    with placeholder.container():
+        st.markdown(f"""
+        <div class="chat-bubble-agent">
+            <div class="bubble-avatar" style="background:rgba({int(agent_color[1:3], 16)},{int(agent_color[3:5], 16)},{int(agent_color[5:7], 16)},0.12);border-color:{agent_color}44;">
+                {emoji}
+            </div>
+            <div class="bubble-content">
+                <div class="bubble-header">
+                    <span class="bubble-speaker" style="color:{agent_color}">{speaker}</span>
+                    <span class="bubble-role-badge">{role}</span>
+                </div>
+                <div class="bubble-text">
+                    <div style="display: inline-block;">
+                        <div style="
+                            display: inline-block;
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 50%;
+                            background: {agent_color};
+                            margin: 0 3px;
+                            animation: pulse 1.5s ease-in-out infinite;
+                        "></div>
+                        <div style="
+                            display: inline-block;
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 50%;
+                            background: {agent_color};
+                            margin: 0 3px;
+                            animation: pulse 1.5s ease-in-out infinite;
+                        " style="animation-delay: 0.2s;"></div>
+                        <div style="
+                            display: inline-block;
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 50%;
+                            background: {agent_color};
+                            margin: 0 3px;
+                            animation: pulse 1.5s ease-in-out infinite;
+                        " style="animation-delay: 0.4s;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <style>
+            @keyframes pulse {{
+                0%, 100% {{ opacity: 0.3; }}
+                50% {{ opacity: 1; }}
+            }}
+        </style>
+        """, unsafe_allow_html=True)
+    
+    # Generate audio FIRST
+    audio_file = generate_speech(role, content.strip())
+    
+    # Prepare audio bytes
+    audio_bytes = None
+    if audio_file and os.path.exists(audio_file):
+        try:
+            with open(audio_file, "rb") as f:
+                audio_bytes = f.read()
+        except Exception as e:
+            print(f"Audio read error: {e}")
+    
+#---------------------------------------------------------------------------
+    # Calculate timing for text display to match audio
+#---------------------------------------------------------------------------
+
+    word_count = len(content.split())
+    # Estimate audio duration (150 words per minute)
+    estimated_duration = (word_count / 200) * 60
+    # Calculate time per word to match the audio duration
+    time_per_word = estimated_duration / word_count if word_count > 0 else 0.05
+    # Ensure minimum readable speed (no lower limit on max for proper sync)
+    time_per_word = max(0.03, time_per_word)
+    
+    # Split text into sentences
+    sentences = re.split(r'(?<=[.!?])\s+', content)
+    displayed_text = ""
+    
+    # Play audio and stream text simultaneously
+    with audio_container:
+        if audio_bytes:
+            st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+    
+    time.sleep(0.2)  # Brief delay to ensure audio starts
+    
+    # Stream text synchronized with audio
+    for sentence in sentences:
+        if not sentence.strip():
+            continue
+        
+        words = sentence.split(" ")
+        
+        for word in words:
+            displayed_text += word + " "
+            safe_content = displayed_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            
+            with placeholder.container():
+                html = f"""
+                <div class="chat-bubble-agent">
+                    <div class="bubble-avatar" style="background:rgba({int(agent_color[1:3], 16)},{int(agent_color[3:5], 16)},{int(agent_color[5:7], 16)},0.12);border-color:{agent_color}44;">
+                        {emoji}
+                    </div>
+                    <div class="bubble-content">
+                        <div class="bubble-header">
+                            <span class="bubble-speaker" style="color:{agent_color}">{speaker}</span>
+                            <span class="bubble-role-badge">{role}</span>
+                        </div>
+                        <div class="bubble-text" style="animation: fadeIn 0.3s ease forwards;">
+                            {safe_content}
+                            <span style="animation: blink 0.7s ease-in-out infinite;">▌</span>
+                        </div>
+                    </div>
+                </div>
+                <style>
+                    @keyframes fadeIn {{
+                        from {{ opacity: 0.7; }}
+                        to {{ opacity: 1; }}
+                    }}
+                    @keyframes blink {{
+                        0%, 49% {{ opacity: 1; }}
+                        50%, 100% {{ opacity: 0; }}
+                    }}
+                </style>
+                """
+                st.markdown(html, unsafe_allow_html=True)
+            
+            time.sleep(time_per_word)
+        
+        # Small pause between sentences
+        time.sleep(0.02)
+    
+    # Clean up audio file
+    if audio_file and os.path.exists(audio_file):
+        try:
+            os.remove(audio_file)
+        except:
+            pass
+    
+    # Final display without cursor
+    safe_content = displayed_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    with placeholder.container():
+        html = f"""
+        <div class="chat-bubble-agent">
+            <div class="bubble-avatar" style="background:rgba({int(agent_color[1:3], 16)},{int(agent_color[3:5], 16)},{int(agent_color[5:7], 16)},0.12);border-color:{agent_color}44;">
+                {emoji}
+            </div>
+            <div class="bubble-content">
+                <div class="bubble-header">
+                    <span class="bubble-speaker" style="color:{agent_color}">{speaker}</span>
+                    <span class="bubble-role-badge">{role}</span>
+                </div>
+                <div class="bubble-text">
+                    {safe_content}
+                </div>
+            </div>
+        </div>
+        """
+        st.markdown(html, unsafe_allow_html=True)
 
 
 def render_agent_card(agent: dict, status: str):

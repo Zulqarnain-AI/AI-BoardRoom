@@ -17,6 +17,8 @@ if _ROOT not in sys.path:
 
 import streamlit as st  # type: ignore
 import re
+import time
+import random
 from agent_definitions import AGENTS
 from agent_runner import call_agent
 from pitch_generator import generate_pitch, generate_business_plan
@@ -26,6 +28,8 @@ from ui_helpers import (
     render_agent_card,
     render_insights_section,
     render_pitch_section,
+    play_agent_audio,
+    stream_chat_bubble_with_audio,
 )
 
 # ── Page config ───────────────────────────────────────────────────────────────
@@ -47,16 +51,28 @@ if "current_idea" not in st.session_state:
     st.session_state.current_idea = ""
 if "debate_finished" not in st.session_state:
     st.session_state.debate_finished = False
-if "active_agent" not in st.session_state:
-    st.session_state.active_agent = None
 if "session_started" not in st.session_state:
     st.session_state.session_started = False
-if "session_round" not in st.session_state:
-    st.session_state.session_round = 0
 if "show_history" not in st.session_state:
     st.session_state.show_history = False
 if "business_plan" not in st.session_state:
     st.session_state.business_plan = ""
+if "audio_enabled" not in st.session_state:
+    st.session_state.audio_enabled = False
+if "pending_audio" not in st.session_state:
+    st.session_state.pending_audio = None
+if "last_response" not in st.session_state:
+    st.session_state.last_response = ""
+if "last_role" not in st.session_state:
+    st.session_state.last_role = ""
+if "scores" not in st.session_state:
+    st.session_state.scores = {
+        "market": 5,
+        "tech": 5,
+        "finance": 5,
+        "growth": 5,
+        "investor": 5
+    }
 
 
 def _next_turn() -> int:
@@ -98,7 +114,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.divider()
 
 # ── MAIN LAYOUT: 3-COLUMN STRUCTURE ────────────────────────────────────────────
 if st.session_state.current_idea:
@@ -109,20 +124,27 @@ if st.session_state.current_idea:
     # LEFT COLUMN: BOARD MEMBERS
     # ────────────────────────────────────────────────────────────────────────────
     with col_left:
-        st.markdown('<div class="board-panel">', unsafe_allow_html=True)
         st.markdown('<div class="panel-title">👥 BOARD MEMBERS</div>', unsafe_allow_html=True)
 
         for agent in AGENTS:
             status = _get_agent_status(agent["role"])
             render_agent_card(agent, status)
 
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Gamification Scores
+        st.markdown('<div class="section-label">📊 Board Confidence</div>', unsafe_allow_html=True)
+        st.progress(st.session_state.scores["market"] / 10.0, text="👔 Market (CEO)")
+        st.progress(st.session_state.scores["tech"] / 10.0, text="⚙️ Tech (CTO)")
+        st.progress(st.session_state.scores["finance"] / 10.0, text="💰 Finance (CFO)")
+        st.progress(st.session_state.scores["growth"] / 10.0, text="📣 Growth (CMO)")
+        st.progress(st.session_state.scores["investor"] / 10.0, text="🏦 Investor (VC)")
+
 
     # ────────────────────────────────────────────────────────────────────────────
     # CENTER COLUMN: LIVE SESSION / CHAT
     # ────────────────────────────────────────────────────────────────────────────
     with col_center:
-        st.markdown('<div class="session-panel">', unsafe_allow_html=True)
         st.markdown(
             '<div class="panel-title">💬 LIVE BOARDROOM SESSION</div>',
             unsafe_allow_html=True,
@@ -136,11 +158,10 @@ if st.session_state.current_idea:
         else:
             # ── DISPLAY LAST MESSAGE PROMINENTLY ──────────────────────────────
             last_msg = st.session_state.conversation_history[-1]
-            st.markdown('<div class="current-message-section">', unsafe_allow_html=True)
             st.markdown(
                 '<div class="current-message-label">📍 CURRENT RESPONSE</div>',
                 unsafe_allow_html=True,
-            )
+            ) 
             
             if last_msg.get("speaker_type") == "user":
                 render_chat_bubble(
@@ -150,16 +171,26 @@ if st.session_state.current_idea:
                     is_user=True,
                 )
             else:
-                render_chat_bubble(
-                    speaker=last_msg.get("agent", "Agent"),
-                    role=last_msg.get("role", "Unknown"),
-                    content=last_msg.get("content", ""),
-                    is_user=False,
-                    agent_color=last_msg.get("color", "#6366f1"),
-                    emoji=last_msg.get("emoji", ""),
-                )
+                if st.session_state.pending_audio and last_msg.get("role") == st.session_state.pending_audio["role"] and last_msg.get("content") == st.session_state.pending_audio["text"]:
+                    audio_data = st.session_state.pending_audio
+                    st.session_state.pending_audio = None
+                    stream_chat_bubble_with_audio(
+                        speaker=last_msg.get("agent", "Agent"),
+                        role=last_msg.get("role", "Unknown"),
+                        content=last_msg.get("content", ""),
+                        agent_color=last_msg.get("color", "#6366f1"),
+                        emoji=last_msg.get("emoji", ""),
+                    )
+                else:
+                    render_chat_bubble(
+                        speaker=last_msg.get("agent", "Agent"),
+                        role=last_msg.get("role", "Unknown"),
+                        content=last_msg.get("content", ""),
+                        is_user=False,
+                        agent_color=last_msg.get("color", "#6366f1"),
+                        emoji=last_msg.get("emoji", ""),
+                    )
             
-            st.markdown('</div>', unsafe_allow_html=True)
             
             # ── TOGGLE HISTORY BUTTON ──────────────────────────────────────────
             st.markdown("<br>", unsafe_allow_html=True)
@@ -213,17 +244,49 @@ if st.session_state.current_idea:
                 
                 st.markdown('</div>', unsafe_allow_html=True)
 
+        # Final outcome
+        if st.session_state.debate_finished:
+            inv_score = st.session_state.scores.get("investor", 5)
+            if inv_score >= 7:
+                outcome = "✅ FUNDED! The board believes in your vision."
+                color = "#10b981"
+            elif inv_score >= 4:
+                outcome = "⚠️ NEEDS IMPROVEMENT. The board is skeptical."
+                color = "#f59e0b"
+            else:
+                outcome = "❌ REJECTED. The board passed on this idea."
+                color = "#ef4444"
+                
+            st.markdown(f'''
+            <div style="background-color: {color}15; border: 1px solid {color}50; padding: 1.5rem; border-radius: 12px; text-align: center; margin-top: 1.5rem;">
+                <h3 style="color: {color}; margin: 0; font-family: 'Syne', sans-serif;">{outcome}</h3>
+                <p style="color: var(--text-muted); margin-top: 0.5rem; margin-bottom: 0;">Final Investor Score: <strong>{inv_score}/10</strong></p>
+            </div>
+            ''', unsafe_allow_html=True)
+
         st.markdown('</div>', unsafe_allow_html=True)
+
+        # Audio is now handled inline by stream_chat_bubble_with_audio
 
     # ────────────────────────────────────────────────────────────────────────────
     # RIGHT COLUMN: CHAIRPERSON CONTROLS
     # ────────────────────────────────────────────────────────────────────────────
     with col_right:
-        st.markdown('<div class="controls-panel">', unsafe_allow_html=True)
         st.markdown(
             '<div class="panel-title">⚙️ YOUR CONTROLS</div>',
             unsafe_allow_html=True,
         )
+
+        # Audio Mode & Replay
+        st.session_state.audio_enabled = st.toggle("🎙️ Audio Mode", value=st.session_state.audio_enabled)
+        if st.button("🎙️ Replay Last Response", disabled=not st.session_state.last_response):
+            st.session_state.pending_audio = {
+                "text": st.session_state.last_response,
+                "role": st.session_state.last_role
+            }
+            st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
 
         # Session info
         turn_num = len(st.session_state.conversation_history)
@@ -247,7 +310,6 @@ if st.session_state.current_idea:
                 # If session not started yet, initialize session state and add a visible session-start message
                 if not st.session_state.get("session_started", False):
                     st.session_state.session_started = True
-                    st.session_state.session_round = 1
                     # Append a visible system/user message so the center panel shows the session started
                     st.session_state.conversation_history.append({
                         "speaker_type": "user",
@@ -306,6 +368,7 @@ if st.session_state.current_idea:
                 target_agent = mentioned
 
             with st.spinner(f"💭 {target_agent['name']} is thinking…"):
+                time.sleep(random.uniform(0.5, 1.5))
                 response = call_agent(
                     agent=target_agent,
                     idea=st.session_state.current_idea,
@@ -323,7 +386,19 @@ if st.session_state.current_idea:
                 "color": target_agent["color"],
                 "emoji": target_agent["emoji"],
             })
-            st.session_state.active_agent = target_agent["role"]
+            
+            # Gamification update
+            mapping = {"CEO": "market", "CTO": "tech", "CFO": "finance", "CMO": "growth", "Investor": "investor"}
+            score_key = mapping.get(target_agent["role"])
+            if score_key:
+                st.session_state.scores[score_key] = min(10, st.session_state.scores[score_key] + 1)
+                
+            st.session_state.last_response = response
+            st.session_state.last_role = target_agent["role"]
+            
+            if st.session_state.audio_enabled:
+                st.session_state.pending_audio = {"text": response, "role": target_agent["role"]}
+                
             st.toast(f"🎙️ {target_agent['name']} has spoken!", icon="✨")
             st.rerun()
 

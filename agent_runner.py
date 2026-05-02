@@ -58,24 +58,28 @@ def build_messages_for_agent(
             )
     transcript = "\n\n".join(transcript_parts) if transcript_parts else "No prior discussion."
 
-    # If the latest message came from the chairperson, force acknowledgment.
-    latest_user_message = ""
-    if history and history[-1].get("speaker_type") == "user":
-        latest_user_message = history[-1].get("content", "")
-
-    chair_instruction = ""
-    if latest_user_message:
-        chair_instruction = (
-            "IMPORTANT: The Chairperson just spoke. In your first sentence, explicitly "
-            f"acknowledge and react to this input: \"{latest_user_message}\"."
-        )
-
-    direct_question_instruction = ""
+    recent_context_instruction = ""
     if direct_question.strip():
-        direct_question_instruction = (
+        recent_context_instruction = (
             "You were directly asked this question by the Chairperson. "
             f"Answer it clearly before expanding your broader view: \"{direct_question.strip()}\""
         )
+    elif history:
+        last_msg = history[-1]
+        # Ignore system messages like "Session started"
+        if last_msg.get("role") != "Session":
+            last_speaker = last_msg.get("agent", "Another agent")
+            last_content = last_msg.get("content", "")
+            if last_msg.get("speaker_type") == "user":
+                recent_context_instruction = (
+                    "IMPORTANT: The Chairperson just spoke. In your first sentence, explicitly "
+                    f"acknowledge and react to this input: \"{last_content}\"."
+                )
+            else:
+                recent_context_instruction = (
+                    f"IMPORTANT: {last_speaker} just made a point. In your first sentence, "
+                    f"explicitly acknowledge, agree, or push back on their statement: \"{last_content}\"."
+                )
 
     user_content = f"""STARTUP IDEA: {idea}
 
@@ -85,8 +89,7 @@ PRIOR BOARDROOM DISCUSSION:
 ---
 You are now speaking on Turn {turn_num}. Give your perspective as {agent['name']} ({agent['role']}).
 React to what has been said. Be specific, opinionated, and direct.
-{chair_instruction}
-{direct_question_instruction}"""
+{recent_context_instruction}"""
 
     return [
         {"role": "system", "content": system_prompt},
