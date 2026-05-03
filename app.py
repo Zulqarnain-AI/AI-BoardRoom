@@ -477,7 +477,6 @@ else:
         unsafe_allow_html=True,
     )
 
-    st.markdown('<div class="idea-input-container">', unsafe_allow_html=True)
     st.markdown(
         '<div class="section-label">Step 1: Pitch Your Idea</div>',
         unsafe_allow_html=True,

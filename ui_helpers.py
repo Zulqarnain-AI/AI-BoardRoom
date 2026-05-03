@@ -154,7 +154,7 @@ def inject_custom_css():
     }
     .hero-icon {
         font-size: 3rem;
-        margin-bottom: 1rem;
+        margin-bottom: 0.5rem;
     }
     .hero-title {
         font-family: 'Syne', sans-serif;
@@ -174,11 +174,11 @@ def inject_custom_css():
         margin-bottom: 0.5rem;
     }
     .hero-description {
-        font-size: 1rem;
+        font-size: 0px;
         color: var(--text-muted);
         max-width: 600px;
-        margin: 0 auto 2rem;
-        line-height: 1.6;
+        margin: 0;
+        line-height: 0;
     }
     .agent-badges {
         display: flex;
