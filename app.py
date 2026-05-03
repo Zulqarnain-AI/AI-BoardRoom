@@ -286,21 +286,9 @@ if st.session_state.current_idea:
             }
             st.rerun()
 
-        st.markdown("<br>", unsafe_allow_html=True)
 
         # Session info
-        turn_num = len(st.session_state.conversation_history)
-        st.markdown(
-            f'<div class="control-stat">Turns: <strong>{turn_num}</strong></div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f'<div class="control-stat">Debate: <strong>{"Closed" if st.session_state.debate_finished else "Active"}</strong></div>',
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
+        
         # Quick action buttons
         st.markdown('<div class="section-label">Quick Actions</div>', unsafe_allow_html=True)
 
@@ -338,8 +326,6 @@ if st.session_state.current_idea:
                 st.session_state.session_started = False
                 st.toast("🔄 Debate reset", icon="🔄")
                 st.rerun()
-
-        st.markdown("<br>", unsafe_allow_html=True)
 
         # Agent summoning
         st.markdown(
@@ -402,7 +388,6 @@ if st.session_state.current_idea:
             st.toast(f"🎙️ {target_agent['name']} has spoken!", icon="✨")
             st.rerun()
 
-        st.markdown("<br>", unsafe_allow_html=True)
 
         # Chairperson speak
         st.markdown(
@@ -432,7 +417,6 @@ if st.session_state.current_idea:
             else:
                 st.warning("Please type a message first.")
 
-        st.markdown("<br>", unsafe_allow_html=True)
 
         # Debate controls
         st.markdown(
