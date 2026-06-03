@@ -35,6 +35,7 @@ Simulate a real startup boardroom: 5 distinct AI agents debate your idea across 
 
 ---
 
+## Live Demo: [https://huggingface.co/spaces/zulqarnainhassan/AI-BoardRoom]
 ## Local Setup
 
 ### 1. Clone the repo
